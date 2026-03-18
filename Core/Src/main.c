@@ -25,7 +25,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "rm3508.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -94,7 +94,11 @@ int main(void)
   MX_USART1_UART_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
+  RM3508_Init();
 
+  /* 设置两个电机速度 (RPM) */
+  RM3508_SetSpeed(0, 2000);  // 电机1: 2000 RPM
+  RM3508_SetSpeed(1, 2000);  // 电机2: 2000 RPM
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -104,6 +108,8 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    RM3508_Control_Loop();
+    HAL_Delay(2);  // 2ms控制周期 (~500Hz)
   }
   /* USER CODE END 3 */
 }

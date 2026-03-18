@@ -2,12 +2,6 @@
     "folders": [
         {
             "path": "."
-        },
-        {
-            "path": "../Core/Inc"
-        },
-        {
-            "path": "../Core/Src"
         }
     ],
     "settings": {},

@@ -61,6 +61,9 @@ virtualFolder:
           files:
             - path: ../Core/Src/system_stm32f4xx.c
           folders: []
+    - name: ::CMSIS
+      files: []
+      folders: []
 dependenceList: []
 outDir: build
 miscInfo:
@@ -138,15 +141,15 @@ targets:
             - id: 1
               isChecked: true
               mem:
-                size: ""
-                startAddr: ""
+                size: "0x2000"
+                startAddr: "0x20000000"
               noInit: false
               tag: IRAM
             - id: 2
               isChecked: true
               mem:
-                size: "0x0"
-                startAddr: "0x0"
+                size: "0x4000"
+                startAddr: "0x2001c000"
               noInit: false
               tag: IRAM
           ROM:
@@ -175,11 +178,11 @@ targets:
               isChecked: true
               isStartup: true
               mem:
-                size: ""
-                startAddr: ""
+                size: "0x80000"
+                startAddr: "0x8000000"
               tag: IROM
             - id: 2
-              isChecked: true
+              isChecked: false
               isStartup: false
               mem:
                 size: "0x0"
@@ -196,4 +199,14 @@ targets:
         otherCmds: ""
         proType: 1
         speed: 8000
-    uploader: JLink
+      STLink:
+        address: "0x8000000"
+        bin: ""
+        elFile: None
+        optionBytes: .eide/shrimp_machine.st.option.bytes.ini
+        otherCmds: ""
+        proType: SWD
+        resetMode: default
+        runAfterProgram: true
+        speed: 4000
+    uploader: STLink
