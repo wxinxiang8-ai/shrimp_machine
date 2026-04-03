@@ -23,7 +23,7 @@
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
-
+#include "emm_motor.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "rm3508.h"
@@ -101,8 +101,13 @@ int main(void)
   /* 设置两个电机速度 (RPM) */
   RM3508_SetSpeed(0, 2000);  // 电机1: 2000 RPM
   RM3508_SetSpeed(1, 2000);  // 电机2: 2000 RPM
-  /* USER CODE END 2 */
 
+  EMM_MOTOR_Init();
+  HAL_Delay(1000);  // 等待电机初始化完成
+  EMM_Vel_control(0x01, 0, 1000, 50, false); // 控制地址为0x01的电机以1000 RPM的速度运行，方向为CW，加速度为50，非同步
+
+  /* USER CODE END 2 */
+  
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)

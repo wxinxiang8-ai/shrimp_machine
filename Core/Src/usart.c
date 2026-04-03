@@ -21,6 +21,9 @@
 #include "usart.h"
 
 /* USER CODE BEGIN 0 */
+__IO bool rxFrameFlag = false;
+__IO uint8_t rxCmd[CMD_LEN] = {0};
+__IO uint8_t rxCount = 0;
 
 /* USER CODE END 0 */
 
