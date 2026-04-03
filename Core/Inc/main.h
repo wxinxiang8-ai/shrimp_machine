@@ -61,6 +61,8 @@ void Error_Handler(void);
 #define Screen_TX_GPIO_Port GPIOA
 #define Screen_RX_Pin GPIO_PIN_3
 #define Screen_RX_GPIO_Port GPIOA
+#define Water_Pump_Pin GPIO_PIN_4
+#define Water_Pump_GPIO_Port GPIOA
 #define DC_PWM_Pin GPIO_PIN_6
 #define DC_PWM_GPIO_Port GPIOA
 #define DC_DIR1_Pin GPIO_PIN_0
@@ -69,14 +71,10 @@ void Error_Handler(void);
 #define DC_DIR2_GPIO_Port GPIOB
 #define IR_Pin GPIO_PIN_8
 #define IR_GPIO_Port GPIOE
-#define EMM_TX_Pin GPIO_PIN_9
-#define EMM_TX_GPIO_Port GPIOA
-#define EMM_RX_Pin GPIO_PIN_10
-#define EMM_RX_GPIO_Port GPIOA
-#define CAN_RX_Pin GPIO_PIN_11
-#define CAN_RX_GPIO_Port GPIOA
-#define CAN_TX_Pin GPIO_PIN_12
-#define CAN_TX_GPIO_Port GPIOA
+#define EMM_TX_Pin GPIO_PIN_6
+#define EMM_TX_GPIO_Port GPIOB
+#define EMM_RX_Pin GPIO_PIN_7
+#define EMM_RX_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 
