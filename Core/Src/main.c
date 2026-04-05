@@ -23,10 +23,9 @@
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
-#include "emm_motor.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "rm3508.h"
+#include "dc_motor.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -36,7 +35,10 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define DC_TEST_TARGET_RPM       1000
+#define DC_TEST_ACCEL_STEP_RPM   100
+#define DC_TEST_STEP_DELAY_MS    200
+#define DC_TEST_RUN_TIME_MS      20000
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -69,6 +71,7 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
+  int16_t test_speed = 0;
 
   /* USER CODE END 1 */
 
@@ -96,16 +99,27 @@ int main(void)
   MX_USART1_UART_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
-  RM3508_Init();
+  DC_Motor_Init();
+  DC_Motor_SetDirection(0);
+  DC_Motor_SetSpeed(0);
 
-  /* 设置两个电机速度 (RPM) */
-  RM3508_SetSpeed(0, 2000);  // 电机1: 2000 RPM
-  RM3508_SetSpeed(1, 2000);  // 电机2: 2000 RPM
+  /* 正转梯形测试：加速到 1000RPM -> 匀速 20s -> 减速停止 */
+  for (test_speed = 0; test_speed <= DC_TEST_TARGET_RPM; test_speed += DC_TEST_ACCEL_STEP_RPM)
+  {
+    DC_Motor_SetSpeed(test_speed);
+    HAL_Delay(DC_TEST_STEP_DELAY_MS);
+  }
 
-  EMM_MOTOR_Init();
-  HAL_Delay(1000);  // 等待电机初始化完成
-  EMM_Vel_control(0x01, 0, 1000, 50, false); // 控制地址为0x01的电机以1000 RPM的速度运行，方向为CW，加速度为50，非同步
+  HAL_Delay(DC_TEST_RUN_TIME_MS);
 
+  for (test_speed = DC_TEST_TARGET_RPM; test_speed >= 0; test_speed -= DC_TEST_ACCEL_STEP_RPM)
+  {
+    DC_Motor_SetSpeed(test_speed);
+    HAL_Delay(DC_TEST_STEP_DELAY_MS);
+  }
+
+  DC_Motor_SetDirection(2);
+  DC_Motor_SetSpeed(0);
   /* USER CODE END 2 */
   
   /* Infinite loop */
@@ -115,8 +129,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    RM3508_Control_Loop();
-    HAL_Delay(2);  // 2ms控制周期 (~500Hz)
+    HAL_Delay(1000);
   }
   /* USER CODE END 3 */
 }
