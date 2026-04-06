@@ -4,10 +4,14 @@
 #include "main.h"
 #include "can.h"
 
-/* 电机数量 */
-#define MOTOR_NUM  2
+/* 电机数量：支持 0x201 ~ 0x204 */
+#define MOTOR_NUM  4
 
-/* CAN 发送ID */
+/* RM3508/C620 反馈 ID 范围 */
+#define RM3508_FEEDBACK_ID_BASE  0x201
+#define RM3508_FEEDBACK_ID_MAX   (RM3508_FEEDBACK_ID_BASE + MOTOR_NUM - 1)
+
+/* CAN 发送ID（对应 0x201 ~ 0x204 这一组） */
 #define CAN_TX_ID  0x200
 
 /* PID 参数 */
@@ -45,8 +49,14 @@ void PID_Init(PID_t *pid, float kp, float ki, float kd, float max_out, float int
 /* PID 计算 */
 float PID_Calc(PID_t *pid, float target, float measure);
 
-/* 发送电流指令给两个电机 */
+/* 发送四路电流指令到 0x200（对应 0x201 ~ 0x204） */
+void RM3508_SendCurrents(int16_t motor1, int16_t motor2, int16_t motor3, int16_t motor4);
+
+/* 兼容旧测试代码：发送前两路电流，后两路自动补 0 */
 void RM3508_SendCurrent(int16_t motor1, int16_t motor2);
+
+/* 发送单路测试电流，其余路自动补 0 */
+void RM3508_SendCurrentSingle(uint8_t motor_id, int16_t current);
 
 /* 设置电机速度（RPM），内部做PID */
 void RM3508_SetSpeed(uint8_t motor_id, int16_t speed_rpm);
@@ -62,5 +72,15 @@ void RM3508_Control_Loop(void);
 
 /* 获取电机反馈数据 */
 Motor_Measure_t* RM3508_GetMotorData(uint8_t motor_id);
+
+/* 调试观察变量：用于在线调试看 CAN 收发状态 */
+extern volatile uint32_t g_rm3508_last_can_id;
+extern volatile int16_t  g_rm3508_last_speed_rpm;
+extern volatile uint16_t g_rm3508_last_ecd;
+extern volatile uint8_t  g_rm3508_last_temperature;
+extern volatile uint32_t g_rm3508_rx_count;
+extern volatile uint32_t g_rm3508_tx_count;
+extern volatile uint32_t g_rm3508_tx_fail_count;
+extern volatile uint32_t g_rm3508_last_error_code;
 
 #endif /* __RM3508_H */

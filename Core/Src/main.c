@@ -25,6 +25,7 @@
 #include "gpio.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "rm3508.h"
 #include "dc_motor.h"
 /* USER CODE END Includes */
 
@@ -35,21 +36,30 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define DC_TEST_TARGET_RPM       1000
+#define TEST_MODE_DC_MOTOR       1
+#define TEST_MODE_RM3508         0
+#define TEST_MODE_BOTH_MOTORS    2
+
+#define ACTIVE_TEST_MODE         TEST_MODE_RM3508
+
+#define RM3508_TEST_MOTOR_ID       0
+#define RM3508_RUN_CURRENT         2500
+#define DC_TEST_TARGET_RPM         1400
 #define DC_TEST_ACCEL_STEP_RPM   100
 #define DC_TEST_STEP_DELAY_MS    200
 #define DC_TEST_RUN_TIME_MS      20000
+#define DC_TEST_STOP_TIME_MS     2000
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
 
 /* USER CODE END PM */
-
+ 
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+static int16_t g_dc_test_speed_rpm = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -71,7 +81,6 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-  int16_t test_speed = 0;
 
   /* USER CODE END 1 */
 
@@ -99,37 +108,84 @@ int main(void)
   MX_USART1_UART_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
+#if (ACTIVE_TEST_MODE == TEST_MODE_DC_MOTOR)
   DC_Motor_Init();
   DC_Motor_SetDirection(0);
   DC_Motor_SetSpeed(0);
-
-  /* 正转梯形测试：加速到 1000RPM -> 匀速 20s -> 减速停止 */
-  for (test_speed = 0; test_speed <= DC_TEST_TARGET_RPM; test_speed += DC_TEST_ACCEL_STEP_RPM)
-  {
-    DC_Motor_SetSpeed(test_speed);
-    HAL_Delay(DC_TEST_STEP_DELAY_MS);
-  }
-
-  HAL_Delay(DC_TEST_RUN_TIME_MS);
-
-  for (test_speed = DC_TEST_TARGET_RPM; test_speed >= 0; test_speed -= DC_TEST_ACCEL_STEP_RPM)
-  {
-    DC_Motor_SetSpeed(test_speed);
-    HAL_Delay(DC_TEST_STEP_DELAY_MS);
-  }
-
-  DC_Motor_SetDirection(2);
+#elif (ACTIVE_TEST_MODE == TEST_MODE_RM3508)
+  RM3508_Init();
+  RM3508_StopAll();
+  HAL_Delay(200);
+#elif (ACTIVE_TEST_MODE == TEST_MODE_BOTH_MOTORS)
+  DC_Motor_Init();
+  DC_Motor_SetDirection(0);
   DC_Motor_SetSpeed(0);
+  RM3508_Init();
+  RM3508_StopAll();
+  HAL_Delay(200);
+#endif
   /* USER CODE END 2 */
-  
+
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+#if (ACTIVE_TEST_MODE == TEST_MODE_DC_MOTOR)
+    DC_Motor_SetDirection(0);
+
+    for (g_dc_test_speed_rpm = 0; g_dc_test_speed_rpm <= DC_TEST_TARGET_RPM; g_dc_test_speed_rpm += DC_TEST_ACCEL_STEP_RPM)
+    {
+      DC_Motor_SetSpeed(g_dc_test_speed_rpm);
+      HAL_Delay(DC_TEST_STEP_DELAY_MS);
+    }
+
+    DC_Motor_SetSpeed(DC_TEST_TARGET_RPM);
+    HAL_Delay(DC_TEST_RUN_TIME_MS);
+
+    for (g_dc_test_speed_rpm = DC_TEST_TARGET_RPM; g_dc_test_speed_rpm >= 0; g_dc_test_speed_rpm -= DC_TEST_ACCEL_STEP_RPM)
+    {
+      DC_Motor_SetSpeed(g_dc_test_speed_rpm);
+      HAL_Delay(DC_TEST_STEP_DELAY_MS);
+    }
+
+    DC_Motor_SetDirection(2);
+    DC_Motor_SetSpeed(0);
+    HAL_Delay(DC_TEST_STOP_TIME_MS);
+#elif (ACTIVE_TEST_MODE == TEST_MODE_RM3508)
+    RM3508_SendCurrentSingle(RM3508_TEST_MOTOR_ID, RM3508_RUN_CURRENT);
+    HAL_Delay(10);
+#elif (ACTIVE_TEST_MODE == TEST_MODE_BOTH_MOTORS)
+    DC_Motor_SetDirection(0);
+
+    for (g_dc_test_speed_rpm = 0; g_dc_test_speed_rpm <= DC_TEST_TARGET_RPM; g_dc_test_speed_rpm += DC_TEST_ACCEL_STEP_RPM)
+    {
+      DC_Motor_SetSpeed(g_dc_test_speed_rpm);
+      RM3508_SendCurrentSingle(RM3508_TEST_MOTOR_ID, RM3508_HOLD_CURRENT);
+      HAL_Delay(DC_TEST_STEP_DELAY_MS);
+    }
+
+    DC_Motor_SetSpeed(DC_TEST_TARGET_RPM);
+    for (uint32_t i = 0; i < (DC_TEST_RUN_TIME_MS / 10U); i++)
+    {
+      RM3508_SendCurrentSingle(RM3508_TEST_MOTOR_ID, RM3508_HOLD_CURRENT);
+      HAL_Delay(10);
+    }
+
+    for (g_dc_test_speed_rpm = DC_TEST_TARGET_RPM; g_dc_test_speed_rpm >= 0; g_dc_test_speed_rpm -= DC_TEST_ACCEL_STEP_RPM)
+    {
+      DC_Motor_SetSpeed(g_dc_test_speed_rpm);
+      RM3508_SendCurrentSingle(RM3508_TEST_MOTOR_ID, RM3508_HOLD_CURRENT);
+      HAL_Delay(DC_TEST_STEP_DELAY_MS);
+    }
+
+    DC_Motor_SetDirection(2);
+    DC_Motor_SetSpeed(0);
+    RM3508_StopAll();
+    HAL_Delay(DC_TEST_STOP_TIME_MS);
+#endif
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    HAL_Delay(1000);
   }
   /* USER CODE END 3 */
 }

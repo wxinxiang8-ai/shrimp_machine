@@ -8,14 +8,24 @@
 /* 电机反馈数据 */
 static Motor_Measure_t motor_data[MOTOR_NUM];
 
+/* 调试观察变量：用于在线调试看 CAN 收发状态 */
+volatile uint32_t g_rm3508_last_can_id = 0;
+volatile int16_t  g_rm3508_last_speed_rpm = 0;
+volatile uint16_t g_rm3508_last_ecd = 0;
+volatile uint8_t  g_rm3508_last_temperature = 0;
+volatile uint32_t g_rm3508_rx_count = 0;
+volatile uint32_t g_rm3508_tx_count = 0;
+volatile uint32_t g_rm3508_tx_fail_count = 0;
+volatile uint32_t g_rm3508_last_error_code = 0;
+
 /* PID 控制器 */
 static PID_t motor_pid[MOTOR_NUM];
 
 /* 目标速度 */
-static int16_t target_speed[MOTOR_NUM] = {0, 0};
+static int16_t target_speed[MOTOR_NUM] = {0, 0, 0, 0};
 
 /* 电机使能标志 */
-static uint8_t motor_enabled[MOTOR_NUM] = {0, 0};
+static uint8_t motor_enabled[MOTOR_NUM] = {0, 0, 0, 0};
 
 /* CAN 发送/接收相关 */
 static CAN_TxHeaderTypeDef tx_header;
@@ -39,20 +49,41 @@ void RM3508_Init(void)
     filter.FilterFIFOAssignment = CAN_RX_FIFO0;
     filter.FilterActivation = ENABLE;
     filter.SlaveStartFilterBank = 14;
-    HAL_CAN_ConfigFilter(&hcan1, &filter);
+
+    if (HAL_CAN_ConfigFilter(&hcan1, &filter) != HAL_OK) {
+        g_rm3508_last_error_code = HAL_CAN_GetError(&hcan1);
+        Error_Handler();
+    }
 
     /* 启动CAN */
-    HAL_CAN_Start(&hcan1);
+    if (HAL_CAN_Start(&hcan1) != HAL_OK) {
+        g_rm3508_last_error_code = HAL_CAN_GetError(&hcan1);
+        Error_Handler();
+    }
 
     /* 使能FIFO0接收中断 */
-    HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING);
+    if (HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING) != HAL_OK) {
+        g_rm3508_last_error_code = HAL_CAN_GetError(&hcan1);
+        Error_Handler();
+    }
 
-    /* 初始化两个电机的PID: Kp=10, Ki=0.02, Kd=0 */
-    PID_Init(&motor_pid[0], 10.0f, 0.02f, 0.0f, 16384.0f, 5000.0f, 10.0f);
-    PID_Init(&motor_pid[1], 10.0f, 0.02f, 0.0f, 16384.0f, 5000.0f, 10.0f);
+    /* 初始化所有电机的PID: Kp=10, Ki=0.02, Kd=0 */
+    for (uint8_t i = 0; i < MOTOR_NUM; i++) {
+        PID_Init(&motor_pid[i], 10.0f, 0.02f, 0.0f, 16384.0f, 5000.0f, 10.0f);
+    }
 
-    /* 清零反馈数据 */
+    /* 清零反馈数据和控制状态 */
     memset(motor_data, 0, sizeof(motor_data));
+    memset(target_speed, 0, sizeof(target_speed));
+    memset(motor_enabled, 0, sizeof(motor_enabled));
+    g_rm3508_last_can_id = 0;
+    g_rm3508_last_speed_rpm = 0;
+    g_rm3508_last_ecd = 0;
+    g_rm3508_last_temperature = 0;
+    g_rm3508_rx_count = 0;
+    g_rm3508_tx_count = 0;
+    g_rm3508_tx_fail_count = 0;
+    g_rm3508_last_error_code = HAL_CAN_ERROR_NONE;
 }
 
 /*-----------------------------------------------------------
@@ -109,9 +140,9 @@ float PID_Calc(PID_t *pid, float target, float measure)
 }
 
 /*-----------------------------------------------------------
- * 发送电流指令 (CAN ID 0x200)
+ * 发送四路电流指令 (CAN ID 0x200 -> 0x201 ~ 0x204)
  *-----------------------------------------------------------*/
-void RM3508_SendCurrent(int16_t motor1, int16_t motor2)
+void RM3508_SendCurrents(int16_t motor1, int16_t motor2, int16_t motor3, int16_t motor4)
 {
     tx_header.StdId = CAN_TX_ID;
     tx_header.IDE = CAN_ID_STD;
@@ -122,12 +153,42 @@ void RM3508_SendCurrent(int16_t motor1, int16_t motor2)
     tx_data[1] = (uint8_t)(motor1 & 0xFF);
     tx_data[2] = (uint8_t)(motor2 >> 8);
     tx_data[3] = (uint8_t)(motor2 & 0xFF);
-    tx_data[4] = 0;
-    tx_data[5] = 0;
-    tx_data[6] = 0;
-    tx_data[7] = 0;
+    tx_data[4] = (uint8_t)(motor3 >> 8);
+    tx_data[5] = (uint8_t)(motor3 & 0xFF);
+    tx_data[6] = (uint8_t)(motor4 >> 8);
+    tx_data[7] = (uint8_t)(motor4 & 0xFF);
 
-    HAL_CAN_AddTxMessage(&hcan1, &tx_header, tx_data, &tx_mailbox);
+    if (HAL_CAN_GetTxMailboxesFreeLevel(&hcan1) == 0U) {
+        g_rm3508_tx_fail_count++;
+        g_rm3508_last_error_code = HAL_CAN_GetError(&hcan1);
+        return;
+    }
+
+    if (HAL_CAN_AddTxMessage(&hcan1, &tx_header, tx_data, &tx_mailbox) != HAL_OK) {
+        g_rm3508_tx_fail_count++;
+        g_rm3508_last_error_code = HAL_CAN_GetError(&hcan1);
+        return;
+    }
+
+    g_rm3508_tx_count++;
+    g_rm3508_last_error_code = HAL_CAN_ERROR_NONE;
+}
+
+void RM3508_SendCurrent(int16_t motor1, int16_t motor2)
+{
+    RM3508_SendCurrents(motor1, motor2, 0, 0);
+}
+
+void RM3508_SendCurrentSingle(uint8_t motor_id, int16_t current)
+{
+    int16_t output[MOTOR_NUM] = {0};
+
+    if (motor_id >= MOTOR_NUM) {
+        return;
+    }
+
+    output[motor_id] = current;
+    RM3508_SendCurrents(output[0], output[1], output[2], output[3]);
 }
 
 /*-----------------------------------------------------------
@@ -159,7 +220,7 @@ void RM3508_StopAll(void)
     for (uint8_t i = 0; i < MOTOR_NUM; i++) {
         RM3508_Stop(i);
     }
-    RM3508_SendCurrent(0, 0);
+    RM3508_SendCurrents(0, 0, 0, 0);
 }
 
 /*-----------------------------------------------------------
@@ -167,7 +228,7 @@ void RM3508_StopAll(void)
  *-----------------------------------------------------------*/
 void RM3508_Control_Loop(void)
 {
-    int16_t output[MOTOR_NUM] = {0, 0};
+    int16_t output[MOTOR_NUM] = {0};
 
     for (uint8_t i = 0; i < MOTOR_NUM; i++) {
         if (motor_enabled[i]) {
@@ -176,7 +237,7 @@ void RM3508_Control_Loop(void)
         }
     }
 
-    RM3508_SendCurrent(output[0], output[1]);
+    RM3508_SendCurrents(output[0], output[1], output[2], output[3]);
 }
 
 /*-----------------------------------------------------------
@@ -190,23 +251,34 @@ Motor_Measure_t* RM3508_GetMotorData(uint8_t motor_id)
 
 /*-----------------------------------------------------------
  * CAN 接收回调 - 解析C620电调反馈
- * C620 反馈ID: 0x201(电机1), 0x202(电机2)
+ * C620 反馈ID: 0x201 ~ 0x204
  *-----------------------------------------------------------*/
 void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 {
     CAN_RxHeaderTypeDef rx_header;
     uint8_t rx_data[8];
 
-    if (hcan->Instance == CAN1) {
-        HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &rx_header, rx_data);
+    if (hcan->Instance != CAN1) {
+        return;
+    }
 
-        /* 判断是否为电机反馈 (0x201 ~ 0x202) */
-        if (rx_header.StdId >= 0x201 && rx_header.StdId <= 0x200 + MOTOR_NUM) {
-            uint8_t idx = rx_header.StdId - 0x201;
-            motor_data[idx].ecd           = (uint16_t)(rx_data[0] << 8 | rx_data[1]);
-            motor_data[idx].speed_rpm     = (int16_t)(rx_data[2] << 8 | rx_data[3]);
-            motor_data[idx].given_current = (int16_t)(rx_data[4] << 8 | rx_data[5]);
-            motor_data[idx].temperature   = rx_data[6];
-        }
+    if (HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &rx_header, rx_data) != HAL_OK) {
+        g_rm3508_last_error_code = HAL_CAN_GetError(hcan);
+        return;
+    }
+
+    g_rm3508_last_can_id = rx_header.StdId;
+    g_rm3508_last_ecd = (uint16_t)(rx_data[0] << 8 | rx_data[1]);
+    g_rm3508_last_speed_rpm = (int16_t)(rx_data[2] << 8 | rx_data[3]);
+    g_rm3508_last_temperature = rx_data[6];
+    g_rm3508_rx_count++;
+
+    /* 判断是否为电机反馈 (0x201 ~ 0x204) */
+    if (rx_header.StdId >= RM3508_FEEDBACK_ID_BASE && rx_header.StdId <= RM3508_FEEDBACK_ID_MAX) {
+        uint8_t idx = (uint8_t)(rx_header.StdId - RM3508_FEEDBACK_ID_BASE);
+        motor_data[idx].ecd           = (uint16_t)(rx_data[0] << 8 | rx_data[1]);
+        motor_data[idx].speed_rpm     = (int16_t)(rx_data[2] << 8 | rx_data[3]);
+        motor_data[idx].given_current = (int16_t)(rx_data[4] << 8 | rx_data[5]);
+        motor_data[idx].temperature   = rx_data[6];
     }
 }
