@@ -26,6 +26,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "dc_motor.h"
+#include "Screen.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -35,10 +36,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define DC_TEST_TARGET_RPM       1000
-#define DC_TEST_ACCEL_STEP_RPM   100
-#define DC_TEST_STEP_DELAY_MS    200
-#define DC_TEST_RUN_TIME_MS      20000
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -49,7 +47,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+MachineContext_t g_ctx;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -71,7 +69,6 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-  int16_t test_speed = 0;
 
   /* USER CODE END 1 */
 
@@ -100,26 +97,15 @@ int main(void)
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
   DC_Motor_Init();
-  DC_Motor_SetDirection(0);
+  DC_Motor_SetDirection(2);  /* stopped */
   DC_Motor_SetSpeed(0);
 
-  /* 正转梯形测试：加速到 1000RPM -> 匀速 20s -> 减速停止 */
-  for (test_speed = 0; test_speed <= DC_TEST_TARGET_RPM; test_speed += DC_TEST_ACCEL_STEP_RPM)
-  {
-    DC_Motor_SetSpeed(test_speed);
-    HAL_Delay(DC_TEST_STEP_DELAY_MS);
-  }
+  App_Init(&g_ctx);
+  Screen_Init();
 
-  HAL_Delay(DC_TEST_RUN_TIME_MS);
-
-  for (test_speed = DC_TEST_TARGET_RPM; test_speed >= 0; test_speed -= DC_TEST_ACCEL_STEP_RPM)
-  {
-    DC_Motor_SetSpeed(test_speed);
-    HAL_Delay(DC_TEST_STEP_DELAY_MS);
-  }
-
-  DC_Motor_SetDirection(2);
-  DC_Motor_SetSpeed(0);
+  /* Draw full UI via GUI commands */
+  HAL_Delay(300);
+  Screen_DrawFullUI(&g_ctx);
   /* USER CODE END 2 */
   
   /* Infinite loop */
@@ -129,7 +115,11 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    HAL_Delay(1000);
+    Screen_ProcessRx();
+    App_ProcessEvents(&g_ctx);
+    App_ApplyOutputs(&g_ctx);
+    App_UpdateRuntime(&g_ctx);
+    Screen_RefreshDirty(&g_ctx);
   }
   /* USER CODE END 3 */
 }
