@@ -11,8 +11,12 @@
 #define RM3508_FEEDBACK_ID_BASE  0x201
 #define RM3508_FEEDBACK_ID_MAX   (RM3508_FEEDBACK_ID_BASE + MOTOR_NUM - 1)
 
-/* CAN 发送ID（对应 0x201 ~ 0x204 这一组） */
-#define CAN_TX_ID  0x200
+/* CAN 发送ID：
+ * 0x200 -> 0x201 ~ 0x204
+ * 0x1FF -> 0x205 ~ 0x208
+ */
+#define CAN_TX_ID_GROUP1  0x200
+#define CAN_TX_ID_GROUP2  0x1FF
 
 /* PID 参数 */
 typedef struct {
@@ -52,6 +56,9 @@ float PID_Calc(PID_t *pid, float target, float measure);
 /* 发送四路电流指令到 0x200（对应 0x201 ~ 0x204） */
 void RM3508_SendCurrents(int16_t motor1, int16_t motor2, int16_t motor3, int16_t motor4);
 
+/* 发送四路电流指令到 0x1FF（对应 0x205 ~ 0x208） */
+void RM3508_SendCurrentsGroup2(int16_t motor5, int16_t motor6, int16_t motor7, int16_t motor8);
+
 /* 兼容旧测试代码：发送前两路电流，后两路自动补 0 */
 void RM3508_SendCurrent(int16_t motor1, int16_t motor2);
 
@@ -82,5 +89,7 @@ extern volatile uint32_t g_rm3508_rx_count;
 extern volatile uint32_t g_rm3508_tx_count;
 extern volatile uint32_t g_rm3508_tx_fail_count;
 extern volatile uint32_t g_rm3508_last_error_code;
+extern volatile uint32_t g_rm3508_init_stage;
+extern volatile uint8_t  g_rm3508_init_ok;
 
 #endif /* __RM3508_H */

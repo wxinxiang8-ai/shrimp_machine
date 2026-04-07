@@ -25,7 +25,8 @@ void Emm_V5_Reset_CurPos_To_Zero(uint8_t addr)
   cmd[3] =  0x6B;                       // 校验字节
   
   // 发送命令
-	HAL_UART_Transmit_DMA(&huart1, (uint8_t *)cmd, 4);
+	HAL_UART_Transmit(&huart1, (uint8_t *)cmd, 4, 100);
+
 }
 
 /**
@@ -44,7 +45,8 @@ void Emm_V5_Reset_Clog_Pro(uint8_t addr)
   cmd[3] =  0x6B;                       // 校验字节
   
   // 发送命令
-  HAL_UART_Transmit_DMA(&huart1, (uint8_t *)cmd, 4);
+  HAL_UART_Transmit(&huart1, (uint8_t *)cmd, 4, 100);
+
 }
 
 /**
@@ -83,7 +85,8 @@ void Emm_V5_Read_Sys_Params(uint8_t addr, SysParams_t s)
   cmd[i] = 0x6B; ++i;                   // 校验字节
   
   // 发送命令
-  HAL_UART_Transmit_DMA(&huart1, (uint8_t *)cmd, i);
+  HAL_UART_Transmit(&huart1, (uint8_t *)cmd, i, 100);
+
 }
 
 /**
@@ -106,7 +109,8 @@ void Emm_V5_Modify_Ctrl_Mode(uint8_t addr, bool svF, uint8_t ctrl_mode)
   cmd[5] =  0x6B;                       // 校验字节
   
   // 发送命令
-  HAL_UART_Transmit_DMA(&huart1, (uint8_t *)cmd, 6);
+  HAL_UART_Transmit(&huart1, (uint8_t *)cmd, 6, 100);
+
 }
 
 /**
@@ -129,7 +133,8 @@ void Emm_V5_En_Control(uint8_t addr, bool state, bool snF)
   cmd[5] =  0x6B;                       // 校验字节
   
   // 发送命令
-  HAL_UART_Transmit_DMA(&huart1, (uint8_t *)cmd, 6);
+  HAL_UART_Transmit(&huart1, (uint8_t *)cmd, 6, 100);
+
 }
 
 /**
@@ -149,14 +154,17 @@ void Emm_V5_Vel_Control(uint8_t addr, uint8_t dir, uint16_t vel, uint8_t acc, bo
   cmd[0] =  addr;                       // 地址
   cmd[1] =  0xF6;                       // 功能码
   cmd[2] =  dir;                        // 方向
-  cmd[3] =  (uint8_t)(vel >> 8);        // 速度(RPM)高8位字节
-  cmd[4] =  (uint8_t)(vel >> 0);        // 速度(RPM)低8位字节
+  cmd[3] =  (uint8_t)(vel >> 8);
+        // 速度(RPM)高8位字节
+  cmd[4] =  (uint8_t)(vel >> 0);
+        // 速度(RPM)低8位字节
   cmd[5] =  acc;                        // 加速度，注意：0是直接启动
   cmd[6] =  snF;                        // 多机同步运动标志
   cmd[7] =  0x6B;                       // 校验字节
   
   // 发送命令
-  HAL_UART_Transmit_DMA(&huart1, (uint8_t *)cmd, 8);
+  HAL_UART_Transmit(&huart1, (uint8_t *)cmd, 8, 100);
+
 }
 
 /**
@@ -178,19 +186,26 @@ void Emm_V5_Pos_Control(uint8_t addr, uint8_t dir, uint16_t vel, uint8_t acc, ui
   cmd[0]  =  addr;                      // 地址
   cmd[1]  =  0xFD;                      // 功能码
   cmd[2]  =  dir;                       // 方向
-  cmd[3]  =  (uint8_t)(vel >> 8);       // 速度(RPM)高8位字节
-  cmd[4]  =  (uint8_t)(vel >> 0);       // 速度(RPM)低8位字节 
+  cmd[3]  =  (uint8_t)(vel >> 8);
+       // 速度(RPM)高8位字节
+  cmd[4]  =  (uint8_t)(vel >> 0);
+       // 速度(RPM)低8位字节 
   cmd[5]  =  acc;                       // 加速度，注意：0是直接启动
-  cmd[6]  =  (uint8_t)(clk >> 24);      // 脉冲数(bit24 - bit31)
-  cmd[7]  =  (uint8_t)(clk >> 16);      // 脉冲数(bit16 - bit23)
-  cmd[8]  =  (uint8_t)(clk >> 8);       // 脉冲数(bit8  - bit15)
-  cmd[9]  =  (uint8_t)(clk >> 0);       // 脉冲数(bit0  - bit7 )
+  cmd[6]  =  (uint8_t)(clk >> 24);
+      // 脉冲数(bit24 - bit31)
+  cmd[7]  =  (uint8_t)(clk >> 16);
+      // 脉冲数(bit16 - bit23)
+  cmd[8]  =  (uint8_t)(clk >> 8);
+       // 脉冲数(bit8  - bit15)
+  cmd[9]  =  (uint8_t)(clk >> 0);
+       // 脉冲数(bit0  - bit7 )
   cmd[10] =  raF;                       // 相位/绝对标志，false为相对运动，true为绝对值运动
   cmd[11] =  snF;                       // 多机同步运动标志，false为不启用，true为启用
   cmd[12] =  0x6B;                      // 校验字节
   
   // 发送命令
-  HAL_UART_Transmit_DMA(&huart1, (uint8_t *)cmd, 13);
+  HAL_UART_Transmit(&huart1, (uint8_t *)cmd, 13, 100);
+
 }
 
 /**
@@ -211,7 +226,8 @@ void Emm_V5_Stop_Now(uint8_t addr, bool snF)
   cmd[4] =  0x6B;                       // 校验字节
   
   // 发送命令
-  HAL_UART_Transmit_DMA(&huart1, (uint8_t *)cmd, 5);
+  HAL_UART_Transmit(&huart1, (uint8_t *)cmd, 5, 100);
+
 }
 
 /**
@@ -230,7 +246,8 @@ void Emm_V5_Synchronous_motion(uint8_t addr)
   cmd[3] =  0x6B;                       // 校验字节
   
   // 发送命令
-  HAL_UART_Transmit_DMA(&huart1, (uint8_t *)cmd, 4);
+  HAL_UART_Transmit(&huart1, (uint8_t *)cmd, 4, 100);
+
 }
 
 /**
@@ -251,7 +268,8 @@ void Emm_V5_Origin_Set_O(uint8_t addr, bool svF)
   cmd[4] =  0x6B;                       // 校验字节
   
   // 发送命令
-  HAL_UART_Transmit_DMA(&huart1, (uint8_t *)cmd, 5);
+  HAL_UART_Transmit(&huart1, (uint8_t *)cmd, 5, 100);
+
 }
 
 /**
@@ -279,23 +297,36 @@ void Emm_V5_Origin_Modify_Params(uint8_t addr, bool svF, uint8_t o_mode, uint8_t
   cmd[3] =  svF;                        // 是否存储标志，false为不存储，true为存储
   cmd[4] =  o_mode;                     // 回零模式，0为单圈就近回零，1为单圈方向回零，2为多圈无限位碰撞回零，3为多圈有限位开关回零
   cmd[5] =  o_dir;                      // 回零方向
-  cmd[6]  =  (uint8_t)(o_vel >> 8);     // 回零速度(RPM)高8位字节
-  cmd[7]  =  (uint8_t)(o_vel >> 0);     // 回零速度(RPM)低8位字节 
-  cmd[8]  =  (uint8_t)(o_tm >> 24);     // 回零超时时间(bit24 - bit31)
-  cmd[9]  =  (uint8_t)(o_tm >> 16);     // 回零超时时间(bit16 - bit23)
-  cmd[10] =  (uint8_t)(o_tm >> 8);      // 回零超时时间(bit8  - bit15)
-  cmd[11] =  (uint8_t)(o_tm >> 0);      // 回零超时时间(bit0  - bit7 )
-  cmd[12] =  (uint8_t)(sl_vel >> 8);    // 无限位碰撞回零检测转速(RPM)高8位字节
-  cmd[13] =  (uint8_t)(sl_vel >> 0);    // 无限位碰撞回零检测转速(RPM)低8位字节 
-  cmd[14] =  (uint8_t)(sl_ma >> 8);     // 无限位碰撞回零检测电流(Ma)高8位字节
-  cmd[15] =  (uint8_t)(sl_ma >> 0);     // 无限位碰撞回零检测电流(Ma)低8位字节 
-  cmd[16] =  (uint8_t)(sl_ms >> 8);     // 无限位碰撞回零检测时间(Ms)高8位字节
-  cmd[17] =  (uint8_t)(sl_ms >> 0);     // 无限位碰撞回零检测时间(Ms)低8位字节
+  cmd[6]  =  (uint8_t)(o_vel >> 8);
+     // 回零速度(RPM)高8位字节
+  cmd[7]  =  (uint8_t)(o_vel >> 0);
+     // 回零速度(RPM)低8位字节 
+  cmd[8]  =  (uint8_t)(o_tm >> 24);
+     // 回零超时时间(bit24 - bit31)
+  cmd[9]  =  (uint8_t)(o_tm >> 16);
+     // 回零超时时间(bit16 - bit23)
+  cmd[10] =  (uint8_t)(o_tm >> 8);
+      // 回零超时时间(bit8  - bit15)
+  cmd[11] =  (uint8_t)(o_tm >> 0);
+      // 回零超时时间(bit0  - bit7 )
+  cmd[12] =  (uint8_t)(sl_vel >> 8);
+    // 无限位碰撞回零检测转速(RPM)高8位字节
+  cmd[13] =  (uint8_t)(sl_vel >> 0);
+    // 无限位碰撞回零检测转速(RPM)低8位字节 
+  cmd[14] =  (uint8_t)(sl_ma >> 8);
+     // 无限位碰撞回零检测电流(Ma)高8位字节
+  cmd[15] =  (uint8_t)(sl_ma >> 0);
+     // 无限位碰撞回零检测电流(Ma)低8位字节 
+  cmd[16] =  (uint8_t)(sl_ms >> 8);
+     // 无限位碰撞回零检测时间(Ms)高8位字节
+  cmd[17] =  (uint8_t)(sl_ms >> 0);
+     // 无限位碰撞回零检测时间(Ms)低8位字节
   cmd[18] =  potF;                      // 上电自动触发回零，false为不使能，true为使能
   cmd[19] =  0x6B;                      // 校验字节
   
   // 发送命令
-  HAL_UART_Transmit_DMA(&huart1, (uint8_t *)cmd, 20);
+  HAL_UART_Transmit(&huart1, (uint8_t *)cmd, 20, 100);
+
 }
 
 /**
@@ -317,7 +348,8 @@ void Emm_V5_Origin_Trigger_Return(uint8_t addr, uint8_t o_mode, bool snF)
   cmd[4] =  0x6B;                       // 校验字节
   
   // 发送命令
-  HAL_UART_Transmit_DMA(&huart1, (uint8_t *)cmd, 5);
+  HAL_UART_Transmit(&huart1, (uint8_t *)cmd, 5, 100);
+
 }
 
 /**
@@ -336,5 +368,6 @@ void Emm_V5_Origin_Interrupt(uint8_t addr)
   cmd[3] =  0x6B;                       // 校验字节
   
   // 发送命令
-  HAL_UART_Transmit_DMA(&huart1, (uint8_t *)cmd, 5);
+  HAL_UART_Transmit(&huart1, (uint8_t *)cmd, 5, 100);
+
 }

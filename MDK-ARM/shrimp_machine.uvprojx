@@ -422,6 +422,46 @@
               <FileType>1</FileType>
               <FilePath>../Core/Src/stm32f4xx_hal_msp.c</FilePath>
             </File>
+            <File>
+              <FileName>Screen.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Core/Src/Screen.c</FilePath>
+            </File>
+            <File>
+              <FileName>dc_motor.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Core/Src/dc_motor.c</FilePath>
+            </File>
+            <File>
+              <FileName>dump.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Core/Src/dump.c</FilePath>
+            </File>
+            <File>
+              <FileName>emm_motor.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Core/Src/emm_motor.c</FilePath>
+            </File>
+            <File>
+              <FileName>Emm_V5.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Core/Src/Emm_V5.c</FilePath>
+            </File>
+            <File>
+              <FileName>IR.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Core/Src/IR.c</FilePath>
+            </File>
+            <File>
+              <FileName>rm3508.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Core/Src/rm3508.c</FilePath>
+            </File>
+            <File>
+              <FileName>machine_workflow.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Core/Src/machine_workflow.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

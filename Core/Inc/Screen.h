@@ -79,7 +79,8 @@ typedef enum {
     EVT_PUMP_ON,
     EVT_PUMP_OFF,
     EVT_RESET_COUNT,
-    EVT_PAGE_CHANGED
+    EVT_PAGE_CHANGED,
+    EVT_IR_TRIGGER
 } AppEventType_t;
 
 typedef struct {

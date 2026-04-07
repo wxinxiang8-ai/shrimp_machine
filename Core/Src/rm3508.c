@@ -17,6 +17,8 @@ volatile uint32_t g_rm3508_rx_count = 0;
 volatile uint32_t g_rm3508_tx_count = 0;
 volatile uint32_t g_rm3508_tx_fail_count = 0;
 volatile uint32_t g_rm3508_last_error_code = 0;
+volatile uint32_t g_rm3508_init_stage = 0;
+volatile uint8_t  g_rm3508_init_ok = 0;
 
 /* PID 控制器 */
 static PID_t motor_pid[MOTOR_NUM];
@@ -39,6 +41,11 @@ void RM3508_Init(void)
 {
     /* 配置CAN滤波器 - 接收所有ID */
     CAN_FilterTypeDef filter;
+
+    g_rm3508_init_stage = 1;
+    g_rm3508_init_ok = 0;
+    g_rm3508_last_error_code = HAL_CAN_ERROR_NONE;
+
     filter.FilterBank = 0;
     filter.FilterMode = CAN_FILTERMODE_IDMASK;
     filter.FilterScale = CAN_FILTERSCALE_32BIT;
@@ -50,23 +57,25 @@ void RM3508_Init(void)
     filter.FilterActivation = ENABLE;
     filter.SlaveStartFilterBank = 14;
 
+    g_rm3508_init_stage = 2;
     if (HAL_CAN_ConfigFilter(&hcan1, &filter) != HAL_OK) {
         g_rm3508_last_error_code = HAL_CAN_GetError(&hcan1);
-        Error_Handler();
+        return;
     }
 
-    /* 启动CAN */
+    g_rm3508_init_stage = 3;
     if (HAL_CAN_Start(&hcan1) != HAL_OK) {
         g_rm3508_last_error_code = HAL_CAN_GetError(&hcan1);
-        Error_Handler();
+        return;
     }
 
-    /* 使能FIFO0接收中断 */
+    g_rm3508_init_stage = 4;
     if (HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING) != HAL_OK) {
         g_rm3508_last_error_code = HAL_CAN_GetError(&hcan1);
-        Error_Handler();
+        return;
     }
 
+    g_rm3508_init_stage = 5;
     /* 初始化所有电机的PID: Kp=10, Ki=0.02, Kd=0 */
     for (uint8_t i = 0; i < MOTOR_NUM; i++) {
         PID_Init(&motor_pid[i], 10.0f, 0.02f, 0.0f, 16384.0f, 5000.0f, 10.0f);
@@ -84,6 +93,8 @@ void RM3508_Init(void)
     g_rm3508_tx_count = 0;
     g_rm3508_tx_fail_count = 0;
     g_rm3508_last_error_code = HAL_CAN_ERROR_NONE;
+    g_rm3508_init_stage = 6;
+    g_rm3508_init_ok = 1;
 }
 
 /*-----------------------------------------------------------
@@ -139,12 +150,9 @@ float PID_Calc(PID_t *pid, float target, float measure)
     return pid->output;
 }
 
-/*-----------------------------------------------------------
- * 发送四路电流指令 (CAN ID 0x200 -> 0x201 ~ 0x204)
- *-----------------------------------------------------------*/
-void RM3508_SendCurrents(int16_t motor1, int16_t motor2, int16_t motor3, int16_t motor4)
+static void RM3508_SendCurrentsRaw(uint32_t std_id, int16_t motor1, int16_t motor2, int16_t motor3, int16_t motor4)
 {
-    tx_header.StdId = CAN_TX_ID;
+    tx_header.StdId = std_id;
     tx_header.IDE = CAN_ID_STD;
     tx_header.RTR = CAN_RTR_DATA;
     tx_header.DLC = 8;
@@ -174,6 +182,19 @@ void RM3508_SendCurrents(int16_t motor1, int16_t motor2, int16_t motor3, int16_t
     g_rm3508_last_error_code = HAL_CAN_ERROR_NONE;
 }
 
+/*-----------------------------------------------------------
+ * 发送四路电流指令 (CAN ID 0x200 -> 0x201 ~ 0x204)
+ *-----------------------------------------------------------*/
+void RM3508_SendCurrents(int16_t motor1, int16_t motor2, int16_t motor3, int16_t motor4)
+{
+    RM3508_SendCurrentsRaw(CAN_TX_ID_GROUP1, motor1, motor2, motor3, motor4);
+}
+
+void RM3508_SendCurrentsGroup2(int16_t motor5, int16_t motor6, int16_t motor7, int16_t motor8)
+{
+    RM3508_SendCurrentsRaw(CAN_TX_ID_GROUP2, motor5, motor6, motor7, motor8);
+}
+
 void RM3508_SendCurrent(int16_t motor1, int16_t motor2)
 {
     RM3508_SendCurrents(motor1, motor2, 0, 0);
@@ -181,14 +202,19 @@ void RM3508_SendCurrent(int16_t motor1, int16_t motor2)
 
 void RM3508_SendCurrentSingle(uint8_t motor_id, int16_t current)
 {
-    int16_t output[MOTOR_NUM] = {0};
+    int16_t output_group1[MOTOR_NUM] = {0};
+    int16_t output_group2[MOTOR_NUM] = {0};
 
-    if (motor_id >= MOTOR_NUM) {
+    if (motor_id < MOTOR_NUM) {
+        output_group1[motor_id] = current;
+    } else if (motor_id < (MOTOR_NUM * 2U)) {
+        output_group2[motor_id - MOTOR_NUM] = current;
+    } else {
         return;
     }
 
-    output[motor_id] = current;
-    RM3508_SendCurrents(output[0], output[1], output[2], output[3]);
+    RM3508_SendCurrents(output_group1[0], output_group1[1], output_group1[2], output_group1[3]);
+    RM3508_SendCurrentsGroup2(output_group2[0], output_group2[1], output_group2[2], output_group2[3]);
 }
 
 /*-----------------------------------------------------------

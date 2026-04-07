@@ -5,7 +5,7 @@
   * Touch input via sendxy=1 coordinate events.
   *
   * Minimal HMI project required:
-  *   1. New project -> TJC8048X270_011C, 800x480, baud 115200
+  *   1. New project -> TJC8048X270_011C, 800x480, baud 9600
   *   2. Add 1 blank page (page0), black background
   *   3. page0 Pre-init event code:
   *        sendxy=1
@@ -15,8 +15,6 @@
 
 #include "Screen.h"
 #include "usart.h"
-#include "dc_motor.h"
-#include "Emm_V5.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdarg.h>
@@ -85,10 +83,10 @@ static const TouchBtn_t s_buttons[] = {
     /* DC direction toggle */
     {  30,   380,    160,    50,     COL_ORANGE,COL_WHITE, "DIR:FWD",     EVT_DC_DIR_SET,     0 },
 
-    /* Stepper: [ON/OFF] [-] [+] */
-    {  420,  310,    130,    55,     COL_GRAY,  COL_WHITE, "STEP:OFF",    EVT_STEPPER_ENABLE, 0 },
-    {  560,  310,    70,     55,     COL_DGRAY, COL_WHITE, "S-",          EVT_STEPPER_SPEED_SET, 0 },
-    {  640,  310,    70,     55,     COL_DGRAY, COL_WHITE, "S+",          EVT_STEPPER_SPEED_SET, 1 },
+    /* RM3508: on/off plus fixed direction/speed indicators */
+    {  420,  310,    130,    55,     COL_GRAY,  COL_WHITE, "RM:OFF",      EVT_STEPPER_ENABLE, 0 },
+    {  560,  310,    70,     55,     COL_DGRAY, COL_WHITE, "CW",          EVT_NONE,            0 },
+    {  640,  310,    70,     55,     COL_DGRAY, COL_WHITE, "2000",        EVT_NONE,            0 },
 
     /* Water pump */
     {  420,  380,    180,    55,     COL_BLUE,  COL_WHITE, "PUMP:OFF",    EVT_PUMP_ON,        0 },
@@ -102,8 +100,7 @@ static const TouchBtn_t s_buttons[] = {
 #define BTN_IDX_PUMP       9
 
 /* DC speed step */
-#define DC_SPEED_STEP      100
-#define STEP_SPEED_STEP    50
+#define DC_SPEED_STEP      50
 
 /* ================================================================
  *  Private Variables
@@ -121,21 +118,6 @@ static const uint8_t TJC_END[3] = {0xFF, 0xFF, 0xFF};
 static char s_tx_buf[256];
 
 #define SCREEN_REFRESH_INTERVAL_MS  200
-#define SCREEN_TIME_INTERVAL_MS     1000
-
-/* Output shadow */
-typedef struct {
-    uint8_t  safe_stopped;
-    uint16_t dc_target_rpm;
-    uint8_t  dc_dir;
-    uint8_t  stepper_enable;
-    uint16_t stepper_target_rpm;
-    uint8_t  stepper_dir;
-    uint8_t  pump_on;
-} OutputShadow_t;
-
-static OutputShadow_t s_last_out = { .safe_stopped = 1U };
-static uint32_t s_prev_display_sec = 0xFFFFFFFFU;
 
 /* ================================================================
  *  Atomic Dirty Mask
@@ -333,9 +315,9 @@ void Screen_DrawFullUI(MachineContext_t *ctx)
     /* DC progress bar */
     GUI_ProgressBar(30, 370, 330, 6, COL_DGRAY, COL_GREEN, 0);
 
-    /* Stepper speed display */
-    GUI_TextTr(420, 385, 150, 20, COL_GRAY, "Stepper");
-    snprintf(buf, sizeof(buf), "%u RPM", ctx->stepper_target_rpm);
+    /* RM3508 display */
+    GUI_TextTr(420, 385, 150, 20, COL_GRAY, "RM3508");
+    snprintf(buf, sizeof(buf), "%s", ctx->stepper_enable ? "2000 RPM" : "OFF");
     GUI_Label(420, 405, 150, 25, COL_WHITE, COL_BLACK, buf);
 
     /* Bottom separator */
@@ -402,14 +384,14 @@ static void Screen_HandleButtonPress(uint8_t idx, MachineContext_t *ctx)
     case 3: /* DC speed - */
     {
         uint16_t spd = ctx->dc_target_rpm;
-        spd = (spd >= DC_SPEED_STEP) ? (spd - DC_SPEED_STEP) : 0;
+        spd = (spd > 800U) ? (uint16_t)(spd - DC_SPEED_STEP) : 800U;
         App_PostEvent(EVT_DC_SPEED_SET, spd);
         break;
     }
     case 4: /* DC speed + */
     {
-        uint16_t spd = ctx->dc_target_rpm + DC_SPEED_STEP;
-        if (spd > 1800) spd = 1800;
+        uint16_t spd = (uint16_t)(ctx->dc_target_rpm + DC_SPEED_STEP);
+        if (spd > 1600U) spd = 1600U;
         App_PostEvent(EVT_DC_SPEED_SET, spd);
         break;
     }
@@ -426,20 +408,9 @@ static void Screen_HandleButtonPress(uint8_t idx, MachineContext_t *ctx)
             App_PostEvent(EVT_STEPPER_ENABLE, 0);
         break;
 
-    case 7: /* Stepper speed - */
-    {
-        uint16_t spd = ctx->stepper_target_rpm;
-        spd = (spd >= STEP_SPEED_STEP) ? (spd - STEP_SPEED_STEP) : 0;
-        App_PostEvent(EVT_STEPPER_SPEED_SET, spd);
+    case 7: /* RM3508 direction indicator */
+    case 8: /* RM3508 speed indicator */
         break;
-    }
-    case 8: /* Stepper speed + */
-    {
-        uint16_t spd = ctx->stepper_target_rpm + STEP_SPEED_STEP;
-        if (spd > 5000) spd = 5000;
-        App_PostEvent(EVT_STEPPER_SPEED_SET, spd);
-        break;
-    }
     case 9: /* Pump toggle */
         if (ctx->pump_on)
             App_PostEvent(EVT_PUMP_OFF, 0);
@@ -481,7 +452,8 @@ static void Screen_ParseFrame(const uint8_t *buf, uint16_t len, MachineContext_t
         v = 0;
         for (uint16_t i = 6; i < len && buf[i] >= '0' && buf[i] <= '9'; i++)
             v = v * 10 + (buf[i] - '0');
-        if (v > 1800) v = 1800;
+        if (v < 800U) v = 800U;
+        if (v > 1600U) v = 1600U;
         App_PostEvent(EVT_DC_SPEED_SET, v);
     }
 }
@@ -594,7 +566,11 @@ void Screen_RefreshDirty(MachineContext_t *ctx)
         snprintf(buf, sizeof(buf), "%u RPM", ctx->dc_target_rpm);
         GUI_Label(120, 335, 150, 25, COL_WHITE, COL_BLACK, buf);
 
-        uint32_t pct = ((uint32_t)ctx->dc_target_rpm * 100) / 1800;
+        uint32_t pct = 0U;
+        if (ctx->dc_target_rpm >= 800U)
+        {
+            pct = ((uint32_t)(ctx->dc_target_rpm - 800U) * 100U) / 800U;
+        }
         GUI_ProgressBar(30, 370, 330, 6, COL_DGRAY, COL_GREEN, pct);
 
         /* Update direction button label */
@@ -606,11 +582,11 @@ void Screen_RefreshDirty(MachineContext_t *ctx)
     /* --- Stepper --- */
     if (mask & DIRTY_STEPPER)
     {
-        snprintf(buf, sizeof(buf), "%u RPM", ctx->stepper_target_rpm);
+        snprintf(buf, sizeof(buf), "%s", ctx->stepper_enable ? "2000 RPM" : "OFF");
         GUI_Label(420, 405, 150, 25, COL_WHITE, COL_BLACK, buf);
 
         GUI_RedrawBtn(BTN_IDX_STEP_ENA,
-                      ctx->stepper_enable ? "STEP:ON" : "STEP:OFF",
+                      ctx->stepper_enable ? "RM:ON" : "RM:OFF",
                       ctx->stepper_enable ? COL_GREEN : COL_GRAY);
     }
 
@@ -623,225 +599,4 @@ void Screen_RefreshDirty(MachineContext_t *ctx)
     }
 }
 
-/* ================================================================
- *  App Event Queue
- * ================================================================ */
-
-static AppEvent_t s_evt_queue[APP_EVT_QUEUE_SIZE];
-static volatile uint8_t s_evt_head = 0;
-static volatile uint8_t s_evt_tail = 0;
-
-void App_PostEvent(AppEventType_t type, uint16_t value)
-{
-    uint8_t next = (s_evt_head + 1) % APP_EVT_QUEUE_SIZE;
-    if (next == s_evt_tail) return;
-    s_evt_queue[s_evt_head].type  = type;
-    s_evt_queue[s_evt_head].value = value;
-    s_evt_head = next;
-}
-
-static bool App_PopEvent(AppEvent_t *evt)
-{
-    if (s_evt_head == s_evt_tail) return false;
-    *evt = s_evt_queue[s_evt_tail];
-    s_evt_tail = (s_evt_tail + 1) % APP_EVT_QUEUE_SIZE;
-    return true;
-}
-
-/* ================================================================
- *  App Init
- * ================================================================ */
-
-void App_Init(MachineContext_t *ctx)
-{
-    memset(ctx, 0, sizeof(MachineContext_t));
-    memset(&s_last_out, 0, sizeof(s_last_out));
-    s_last_out.safe_stopped = 1U;
-    s_prev_display_sec = 0xFFFFFFFFU;
-    ctx->sys_state  = SYS_STOPPED;
-    ctx->dirty_mask = DIRTY_ALL;
-}
-
-/* ================================================================
- *  App Event Processing
- * ================================================================ */
-
-void App_ProcessEvents(MachineContext_t *ctx)
-{
-    AppEvent_t evt;
-
-    while (App_PopEvent(&evt))
-    {
-        switch (evt.type)
-        {
-        case EVT_RUN_START:
-            if (ctx->sys_state != SYS_RUNNING)
-            {
-                ctx->sys_state      = SYS_RUNNING;
-                ctx->run_start_tick = HAL_GetTick();
-                ctx->dirty_mask    |= DIRTY_STATE | DIRTY_TIME;
-                s_prev_display_sec  = 0xFFFFFFFFU;
-            }
-            break;
-
-        case EVT_RUN_STOP:
-            if (ctx->sys_state == SYS_RUNNING)
-                ctx->run_time_sec += (HAL_GetTick() - ctx->run_start_tick) / 1000U;
-            ctx->run_start_tick = 0U;
-            s_prev_display_sec  = 0xFFFFFFFFU;
-            ctx->sys_state      = SYS_STOPPED;
-            ctx->dirty_mask    |= DIRTY_STATE | DIRTY_TIME;
-            break;
-
-        case EVT_DC_SPEED_SET:
-            ctx->dc_target_rpm = evt.value;
-            ctx->dirty_mask   |= DIRTY_DC;
-            break;
-
-        case EVT_DC_DIR_SET:
-            ctx->dc_dir      = (uint8_t)evt.value;
-            ctx->dirty_mask |= DIRTY_DC;
-            break;
-
-        case EVT_STEPPER_ENABLE:
-            ctx->stepper_enable = 1;
-            ctx->dirty_mask    |= DIRTY_STEPPER;
-            break;
-
-        case EVT_STEPPER_DISABLE:
-            ctx->stepper_enable = 0;
-            ctx->dirty_mask    |= DIRTY_STEPPER;
-            break;
-
-        case EVT_STEPPER_SPEED_SET:
-            ctx->stepper_target_rpm = evt.value;
-            ctx->dirty_mask        |= DIRTY_STEPPER;
-            break;
-
-        case EVT_STEPPER_DIR_SET:
-            ctx->stepper_dir = (uint8_t)evt.value;
-            ctx->dirty_mask |= DIRTY_STEPPER;
-            break;
-
-        case EVT_PUMP_ON:
-            ctx->pump_on     = 1;
-            ctx->dirty_mask |= DIRTY_PUMP;
-            break;
-
-        case EVT_PUMP_OFF:
-            ctx->pump_on     = 0;
-            ctx->dirty_mask |= DIRTY_PUMP;
-            break;
-
-        case EVT_RESET_COUNT:
-            ctx->peel_count  = 0;
-            ctx->dirty_mask |= DIRTY_COUNT;
-            break;
-
-        default:
-            break;
-        }
-    }
-}
-
-/* ================================================================
- *  Safe Stop
- * ================================================================ */
-
-static void App_SafeStopOutputs(void)
-{
-    DC_Motor_SetSpeed(0);
-    DC_Motor_SetDirection(2);
-    Emm_V5_Stop_Now(1, false);
-    HAL_GPIO_WritePin(Water_Pump_GPIO_Port, Water_Pump_Pin, GPIO_PIN_RESET);
-}
-
-/* ================================================================
- *  Apply Outputs (shadow-based)
- * ================================================================ */
-
-void App_ApplyOutputs(MachineContext_t *ctx)
-{
-    if (ctx->sys_state != SYS_RUNNING || ctx->fault_flags != FAULT_NONE)
-    {
-        if (!s_last_out.safe_stopped)
-        {
-            App_SafeStopOutputs();
-            memset(&s_last_out, 0, sizeof(s_last_out));
-            s_last_out.safe_stopped = 1U;
-        }
-        return;
-    }
-
-    if (s_last_out.safe_stopped ||
-        s_last_out.dc_dir != ctx->dc_dir ||
-        s_last_out.dc_target_rpm != ctx->dc_target_rpm)
-    {
-        DC_Motor_SetDirection(ctx->dc_dir);
-        DC_Motor_SetSpeed((int16_t)ctx->dc_target_rpm);
-    }
-
-    if (s_last_out.safe_stopped ||
-        s_last_out.stepper_enable != ctx->stepper_enable ||
-        s_last_out.stepper_dir != ctx->stepper_dir ||
-        s_last_out.stepper_target_rpm != ctx->stepper_target_rpm)
-    {
-        if (ctx->stepper_enable)
-            Emm_V5_Vel_Control(1, ctx->stepper_dir, ctx->stepper_target_rpm, 20, false);
-        else
-            Emm_V5_Stop_Now(1, false);
-    }
-
-    if (s_last_out.safe_stopped || s_last_out.pump_on != ctx->pump_on)
-    {
-        HAL_GPIO_WritePin(Water_Pump_GPIO_Port, Water_Pump_Pin,
-                          ctx->pump_on ? GPIO_PIN_SET : GPIO_PIN_RESET);
-    }
-
-    s_last_out.safe_stopped       = 0U;
-    s_last_out.dc_target_rpm      = ctx->dc_target_rpm;
-    s_last_out.dc_dir             = ctx->dc_dir;
-    s_last_out.stepper_enable     = ctx->stepper_enable;
-    s_last_out.stepper_target_rpm = ctx->stepper_target_rpm;
-    s_last_out.stepper_dir        = ctx->stepper_dir;
-    s_last_out.pump_on            = ctx->pump_on;
-}
-
-/* ================================================================
- *  Runtime Tracking
- * ================================================================ */
-
-static uint32_t s_last_time_tick = 0;
-
-void App_UpdateRuntime(MachineContext_t *ctx)
-{
-    uint32_t now = HAL_GetTick();
-    if ((now - s_last_time_tick) < SCREEN_TIME_INTERVAL_MS) return;
-    s_last_time_tick = now;
-
-    if (ctx->sys_state == SYS_RUNNING)
-    {
-        uint32_t total = ctx->run_time_sec + (now - ctx->run_start_tick) / 1000U;
-        if (total != s_prev_display_sec)
-        {
-            s_prev_display_sec = total;
-            ctx->dirty_mask   |= DIRTY_TIME;
-        }
-    }
-}
-
-/* ================================================================
- *  IR Counter
- * ================================================================ */
-
-static volatile uint32_t s_last_ir_tick = 0;
-#define IR_DEBOUNCE_MS  50
-
-void IR_Counter_Callback(MachineContext_t *ctx)
-{
-    uint32_t now = HAL_GetTick();
-    if ((now - s_last_ir_tick) < IR_DEBOUNCE_MS) return;
-    s_last_ir_tick = now;
-    ctx->peel_count++;
-    ctx->dirty_mask |= DIRTY_COUNT;
-}
+/* App/workflow logic moved to machine_workflow.c */
