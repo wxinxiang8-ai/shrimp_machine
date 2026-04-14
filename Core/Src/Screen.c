@@ -86,7 +86,7 @@ static const TouchBtn_t s_buttons[] = {
     /* RM3508: on/off plus fixed direction/speed indicators */
     {  420,  310,    130,    55,     COL_GRAY,  COL_WHITE, "RM:OFF",      EVT_STEPPER_ENABLE, 0 },
     {  560,  310,    70,     55,     COL_DGRAY, COL_WHITE, "CW",          EVT_NONE,            0 },
-    {  640,  310,    70,     55,     COL_DGRAY, COL_WHITE, "2000",        EVT_NONE,            0 },
+    {  640,  310,    70,     55,     COL_DGRAY, COL_WHITE, "7500",        EVT_NONE,            0 },
 
     /* Water pump */
     {  420,  380,    180,    55,     COL_BLUE,  COL_WHITE, "PUMP:OFF",    EVT_PUMP_ON,        0 },
@@ -97,10 +97,17 @@ static const TouchBtn_t s_buttons[] = {
 /* Mutable button labels (for toggle states) */
 #define BTN_IDX_DC_DIR     5
 #define BTN_IDX_STEP_ENA   6
+#define BTN_IDX_STEP_DIR   7
+#define BTN_IDX_STEP_SPD   8
 #define BTN_IDX_PUMP       9
 
 /* DC speed step */
 #define DC_SPEED_STEP      50
+
+/* RM3508 speed step */
+#define RM_SPEED_STEP      500U
+#define RM_SPEED_MIN       500U
+#define RM_SPEED_MAX      7500U
 
 /* ================================================================
  *  Private Variables
@@ -116,8 +123,13 @@ uint8_t scr_dma_buf[SCR_RX_DMA_SIZE];
 
 static const uint8_t TJC_END[3] = {0xFF, 0xFF, 0xFF};
 static char s_tx_buf[256];
+static uint32_t s_recover_redraw_tick = 0U;
+static uint32_t s_last_ready_redraw_tick = 0U;
+static uint8_t  s_screen_reinit_pending = 0U;
+static SystemState_t s_last_sys_state = SYS_STOPPED;
 
-#define SCREEN_REFRESH_INTERVAL_MS  200
+#define SCREEN_REFRESH_INTERVAL_MS          200U
+#define SCREEN_READY_REDRAW_COOLDOWN_MS    2000U
 
 /* ================================================================
  *  Atomic Dirty Mask
@@ -270,9 +282,11 @@ static void GUI_RedrawBtn(uint8_t idx, const char *label, uint16_t bg)
 
 void Screen_DrawFullUI(MachineContext_t *ctx)
 {
+    /* Force page0 in case the screen rebooted back to a blank page */
+    Screen_SendCmd("page 0");
+
     /* Clear screen */
     Screen_Fmt("cls %u", COL_BLACK);
-    HAL_Delay(50);
 
     /* === Title bar === */
     GUI_FillRect(0, 0, 800, BAR_H, COL_DGRAY);
@@ -317,7 +331,14 @@ void Screen_DrawFullUI(MachineContext_t *ctx)
 
     /* RM3508 display */
     GUI_TextTr(420, 385, 150, 20, COL_GRAY, "RM3508");
-    snprintf(buf, sizeof(buf), "%s", ctx->stepper_enable ? "2000 RPM" : "OFF");
+    if (ctx->stepper_enable)
+    {
+        snprintf(buf, sizeof(buf), "%u RPM", ctx->stepper_target_rpm);
+    }
+    else
+    {
+        snprintf(buf, sizeof(buf), "OFF");
+    }
     GUI_Label(420, 405, 150, 25, COL_WHITE, COL_BLACK, buf);
 
     /* Bottom separator */
@@ -408,9 +429,24 @@ static void Screen_HandleButtonPress(uint8_t idx, MachineContext_t *ctx)
             App_PostEvent(EVT_STEPPER_ENABLE, 0);
         break;
 
-    case 7: /* RM3508 direction indicator */
-    case 8: /* RM3508 speed indicator */
+    case 7: /* RM3508 direction toggle */
+    {
+        uint8_t new_dir = ctx->stepper_dir ? 0U : 1U;
+        App_PostEvent(EVT_STEPPER_DIR_SET, new_dir);
         break;
+    }
+
+    case 8: /* RM3508 speed step */
+    {
+        uint16_t spd = (uint16_t)(ctx->stepper_target_rpm + RM_SPEED_STEP);
+        if (spd > RM_SPEED_MAX)
+        {
+            spd = RM_SPEED_MIN;
+        }
+        App_PostEvent(EVT_STEPPER_SPEED_SET, spd);
+        break;
+    }
+
     case 9: /* Pump toggle */
         if (ctx->pump_on)
             App_PostEvent(EVT_PUMP_OFF, 0);
@@ -430,6 +466,18 @@ static void Screen_HandleButtonPress(uint8_t idx, MachineContext_t *ctx)
 static void Screen_ParseFrame(const uint8_t *buf, uint16_t len, MachineContext_t *ctx)
 {
     if (len == 0) return;
+
+    /* TJC ready event after reboot/power dip: redraw whole UI */
+    if ((len == 1U) && (buf[0] == 0x88U))
+    {
+        uint32_t now = HAL_GetTick();
+        if ((now - s_last_ready_redraw_tick) >= SCREEN_READY_REDRAW_COOLDOWN_MS)
+        {
+            s_last_ready_redraw_tick = now;
+            s_screen_reinit_pending = 1U;
+        }
+        return;
+    }
 
     /* Touch coordinate event (0x67 header) */
     if (buf[0] == 0x67)
@@ -501,6 +549,10 @@ void Screen_Init(void)
     memset(&s_ring, 0, sizeof(s_ring));
     s_frame_len = 0;
     s_ff_cnt    = 0;
+    s_recover_redraw_tick = 0U;
+    s_last_ready_redraw_tick = 0U;
+    s_screen_reinit_pending = 0U;
+    s_last_sys_state = SYS_STOPPED;
     HAL_UART_Receive_IT(&huart2, &s_rx_byte, 1);
 
     /* Ensure sendxy and thup are enabled */
@@ -513,9 +565,37 @@ void Screen_Init(void)
  *  UI Refresh (redraw only changed regions)
  * ================================================================ */
 
+void Screen_Service(MachineContext_t *ctx)
+{
+    if (s_screen_reinit_pending == 0U)
+    {
+        return;
+    }
+
+    s_screen_reinit_pending = 0U;
+    Screen_SendCmd("sendxy=1");
+    Screen_SendCmd("thup=1");
+    Screen_DrawFullUI(ctx);
+}
+
+void Screen_UART_ErrorCallback(void)
+{
+    s_frame_len = 0U;
+    s_ff_cnt = 0U;
+    memset(&s_ring, 0, sizeof(s_ring));
+    __HAL_UART_CLEAR_OREFLAG(&huart2);
+    __HAL_UART_CLEAR_NEFLAG(&huart2);
+    __HAL_UART_CLEAR_FEFLAG(&huart2);
+    HAL_UART_Receive_IT(&huart2, &s_rx_byte, 1);
+}
+
 void Screen_RefreshDirty(MachineContext_t *ctx)
 {
     uint32_t now = HAL_GetTick();
+
+    (void)s_recover_redraw_tick;
+    s_last_sys_state = ctx->sys_state;
+
     if ((now - ctx->last_refresh_tick) < SCREEN_REFRESH_INTERVAL_MS)
         return;
     ctx->last_refresh_tick = now;
@@ -582,12 +662,28 @@ void Screen_RefreshDirty(MachineContext_t *ctx)
     /* --- Stepper --- */
     if (mask & DIRTY_STEPPER)
     {
-        snprintf(buf, sizeof(buf), "%s", ctx->stepper_enable ? "2000 RPM" : "OFF");
+        if (ctx->stepper_enable)
+        {
+            snprintf(buf, sizeof(buf), "%u RPM", ctx->stepper_target_rpm);
+        }
+        else
+        {
+            snprintf(buf, sizeof(buf), "OFF");
+        }
         GUI_Label(420, 405, 150, 25, COL_WHITE, COL_BLACK, buf);
 
         GUI_RedrawBtn(BTN_IDX_STEP_ENA,
                       ctx->stepper_enable ? "RM:ON" : "RM:OFF",
                       ctx->stepper_enable ? COL_GREEN : COL_GRAY);
+
+        GUI_RedrawBtn(BTN_IDX_STEP_DIR,
+                      ctx->stepper_dir ? "CCW" : "CW",
+                      ctx->stepper_dir ? COL_ORANGE : COL_DGRAY);
+
+        snprintf(buf, sizeof(buf), "%u", ctx->stepper_target_rpm);
+        GUI_RedrawBtn(BTN_IDX_STEP_SPD,
+                      buf,
+                      ctx->stepper_enable ? COL_GREEN : COL_DGRAY);
     }
 
     /* --- Pump --- */

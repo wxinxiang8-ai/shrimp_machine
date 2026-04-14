@@ -30,6 +30,9 @@
 #include "emm_motor.h"
 #include "Screen.h"
 #include "machine_workflow.h"
+#include "emm_id1_test.h"
+#include "rm3508_test.h"
+#include "dc_motor_ir_test.h"
 #include "dump.h"
 #include <string.h>
 /* USER CODE END Includes */
@@ -41,37 +44,16 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define TEST_MODE_RM3508         0
-#define TEST_MODE_DC_MOTOR       1
-#define TEST_MODE_BOTH_MOTORS    2
-#define TEST_MODE_EMM_DUAL       3
-#define TEST_MODE_ALL_MOTORS     4
-#define TEST_MODE_SCREEN         5
+typedef enum
+{
+  APP_MODE_WORKFLOW = 0,
+  APP_MODE_EMM_ID1_TEST,
+  APP_MODE_RM3508_TEST,
+  APP_MODE_DC_MOTOR_IR_TEST
+} AppMode_t;
 
-#define ACTIVE_TEST_MODE         TEST_MODE_SCREEN
-
-#define RM3508_TEST_MOTOR_ID     0
-#define RM3508_TEST_SPEED_RPM    2000
-#define RM3508_TEST_DIRECTION    1
-#define RM3508_RUN_CURRENT       8000
-#define DC_TEST_TARGET_RPM       1200
-#define DC_TEST_ACCEL_STEP_RPM   100
-#define DC_TEST_STEP_DELAY_MS    200
-#define DC_TEST_RUN_TIME_MS      20000
-#define DC_TEST_STOP_TIME_MS     2000
-
-#define EMM_TEST_MOTOR_ID_A       4
-#define EMM_TEST_MOTOR_ID_B       1
-#define EMM_TEST_DIR_A            1
-#define EMM_TEST_DIR_B            1
-#define EMM_TEST_SPEED_RPM_A      50
-#define EMM_TEST_SPEED_RPM_B      50
-#define EMM_TEST_ACCEL            10
-#define EMM_TEST_RUN_TIME_MS      5000
-#define EMM_TEST_STOP_TIME_MS     2000
-#define EMM_TEST_CMD_GAP_MS       50
-#define EMM_TEST_ENABLE_DELAY_MS  100
-#define EMM_TEST_STARTUP_DELAY_MS 2000
+/* 切换入口只改这里：APP_MODE_WORKFLOW / APP_MODE_EMM_ID1_TEST / APP_MODE_RM3508_TEST / APP_MODE_DC_MOTOR_IR_TEST */
+#define APP_MODE_SELECT               APP_MODE_WORKFLOW
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -82,7 +64,6 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-static int16_t g_dc_test_speed_rpm = 0;
 MachineContext_t g_ctx;
 /* USER CODE END PV */
 
@@ -94,44 +75,7 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-static void RM3508_RawCanInit(void)
-{
-  CAN_FilterTypeDef filter = {0};
-
-  filter.FilterBank = 0;
-  filter.FilterMode = CAN_FILTERMODE_IDMASK;
-  filter.FilterScale = CAN_FILTERSCALE_32BIT;
-  filter.FilterIdHigh = 0x0000;
-  filter.FilterIdLow = 0x0000;
-  filter.FilterMaskIdHigh = 0x0000;
-  filter.FilterMaskIdLow = 0x0000;
-  filter.FilterFIFOAssignment = CAN_RX_FIFO0;
-  filter.FilterActivation = ENABLE;
-  filter.SlaveStartFilterBank = 14;
-
-  HAL_CAN_ConfigFilter(&hcan1, &filter);
-  HAL_CAN_Start(&hcan1);
-}
-
-static void RM3508_RawSendCurrent(int16_t current)
-{
-  CAN_TxHeaderTypeDef tx_header = {0};
-  uint8_t tx_data[8] = {0};
-  uint32_t tx_mailbox = 0;
-
-  tx_header.StdId = 0x200;
-  tx_header.IDE = CAN_ID_STD;
-  tx_header.RTR = CAN_RTR_DATA;
-  tx_header.DLC = 8;
-
-  tx_data[0] = (uint8_t)(current >> 8);
-  tx_data[1] = (uint8_t)(current & 0xFF);
-
-  if (HAL_CAN_GetTxMailboxesFreeLevel(&hcan1) > 0U)
-  {
-    HAL_CAN_AddTxMessage(&hcan1, &tx_header, tx_data, &tx_mailbox);
-  }
-}
+/* Legacy ad-hoc motor test helpers removed; workflow now lives in machine_workflow.c. */
 /* USER CODE END 0 */
 
 /**
@@ -169,175 +113,61 @@ int main(void)
   MX_USART1_UART_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
-#if (ACTIVE_TEST_MODE == TEST_MODE_DC_MOTOR)
-  DC_Motor_Init();
-  DC_Motor_SetDirection(2);  /* stopped */
-  DC_Motor_SetSpeed(0);
-#elif (ACTIVE_TEST_MODE == TEST_MODE_RM3508)
-  RM3508_RawCanInit();
-  HAL_Delay(200);
-#elif (ACTIVE_TEST_MODE == TEST_MODE_BOTH_MOTORS)
-  Dump_Init();
-  Dump_Stop();
-  HAL_Delay(200);
-#elif (ACTIVE_TEST_MODE == TEST_MODE_EMM_DUAL)
-  EMM_MOTOR_Init();
-  HAL_Delay(EMM_TEST_STARTUP_DELAY_MS);
-  Emm_V5_Reset_Clog_Pro(EMM_TEST_MOTOR_ID_A);
-  HAL_Delay(EMM_TEST_CMD_GAP_MS);
-  Emm_V5_Modify_Ctrl_Mode(EMM_TEST_MOTOR_ID_A, false, 2);
-  HAL_Delay(EMM_TEST_CMD_GAP_MS);
-  Emm_V5_En_Control(EMM_TEST_MOTOR_ID_A, true, false);
-  HAL_Delay(EMM_TEST_ENABLE_DELAY_MS);
-  Emm_V5_Stop_Now(EMM_TEST_MOTOR_ID_A, false);
-  HAL_Delay(EMM_TEST_CMD_GAP_MS);
-  Emm_V5_Reset_Clog_Pro(EMM_TEST_MOTOR_ID_B);
-  HAL_Delay(EMM_TEST_CMD_GAP_MS);
-  Emm_V5_Modify_Ctrl_Mode(EMM_TEST_MOTOR_ID_B, false, 2);
-  HAL_Delay(EMM_TEST_CMD_GAP_MS);
-  Emm_V5_En_Control(EMM_TEST_MOTOR_ID_B, true, false);
-  HAL_Delay(EMM_TEST_ENABLE_DELAY_MS);
-  Emm_V5_Stop_Now(EMM_TEST_MOTOR_ID_B, false);
-  HAL_Delay(200);
-#elif (ACTIVE_TEST_MODE == TEST_MODE_ALL_MOTORS)
-  DC_Motor_Init();
-  DC_Motor_SetDirection(0);
-  DC_Motor_SetSpeed(0);
-  EMM_MOTOR_Init();
-  HAL_Delay(EMM_TEST_STARTUP_DELAY_MS);
-  Emm_V5_Reset_Clog_Pro(EMM_TEST_MOTOR_ID_A);
-  HAL_Delay(EMM_TEST_CMD_GAP_MS);
-  Emm_V5_Modify_Ctrl_Mode(EMM_TEST_MOTOR_ID_A, false, 2);
-  HAL_Delay(EMM_TEST_CMD_GAP_MS);
-  Emm_V5_En_Control(EMM_TEST_MOTOR_ID_A, true, false);
-  HAL_Delay(EMM_TEST_ENABLE_DELAY_MS);
-  Emm_V5_Stop_Now(EMM_TEST_MOTOR_ID_A, false);
-  HAL_Delay(EMM_TEST_CMD_GAP_MS);
-  Emm_V5_Reset_Clog_Pro(EMM_TEST_MOTOR_ID_B);
-  HAL_Delay(EMM_TEST_CMD_GAP_MS);
-  Emm_V5_Modify_Ctrl_Mode(EMM_TEST_MOTOR_ID_B, false, 2);
-  HAL_Delay(EMM_TEST_CMD_GAP_MS);
-  Emm_V5_En_Control(EMM_TEST_MOTOR_ID_B, true, false);
-  HAL_Delay(EMM_TEST_ENABLE_DELAY_MS);
-  Emm_V5_Stop_Now(EMM_TEST_MOTOR_ID_B, false);
-  HAL_Delay(200);
-#elif (ACTIVE_TEST_MODE == TEST_MODE_SCREEN)
-  /* Screen workflow mode: hardware init is handled by machine_workflow */
-#endif
-
-#if (ACTIVE_TEST_MODE == TEST_MODE_SCREEN)
-  Machine_Workflow_Init(&g_ctx);
-  Screen_Init();
-
-  HAL_Delay(300);
-  /* Draw full UI via GUI commands */
-  Screen_DrawFullUI(&g_ctx);
-#endif
+  if (APP_MODE_SELECT == APP_MODE_EMM_ID1_TEST)
+  {
+    EmmId1Test_Init();
+  }
+  else if (APP_MODE_SELECT == APP_MODE_RM3508_TEST)
+  {
+    Rm3508Test_Init();
+  }
+  else if (APP_MODE_SELECT == APP_MODE_DC_MOTOR_IR_TEST)
+  {
+    DcMotorIrTest_Init();
+  }
+  else
+  {
+    App_Init(&g_ctx);
+    Screen_Init();
+    Screen_DrawFullUI(&g_ctx);
+  }
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-#if (ACTIVE_TEST_MODE == TEST_MODE_DC_MOTOR)
-    DC_Motor_SetDirection(0);
-
-    for (g_dc_test_speed_rpm = 0; g_dc_test_speed_rpm <= DC_TEST_TARGET_RPM; g_dc_test_speed_rpm += DC_TEST_ACCEL_STEP_RPM)
+    if (APP_MODE_SELECT == APP_MODE_EMM_ID1_TEST)
     {
-      DC_Motor_SetSpeed(g_dc_test_speed_rpm);
-      HAL_Delay(DC_TEST_STEP_DELAY_MS);
+      EmmId1Test_Process();
     }
-
-    DC_Motor_SetSpeed(DC_TEST_TARGET_RPM);
-    HAL_Delay(DC_TEST_RUN_TIME_MS);
-
-    for (g_dc_test_speed_rpm = DC_TEST_TARGET_RPM; g_dc_test_speed_rpm >= 0; g_dc_test_speed_rpm -= DC_TEST_ACCEL_STEP_RPM)
+    else if (APP_MODE_SELECT == APP_MODE_RM3508_TEST)
     {
-      DC_Motor_SetSpeed(g_dc_test_speed_rpm);
-      HAL_Delay(DC_TEST_STEP_DELAY_MS);
+      Rm3508Test_Process();
     }
-
-    DC_Motor_SetDirection(2);
-    DC_Motor_SetSpeed(0);
-    HAL_Delay(DC_TEST_STOP_TIME_MS);
-#elif (ACTIVE_TEST_MODE == TEST_MODE_RM3508)
-    RM3508_RawSendCurrent(RM3508_RUN_CURRENT);
-    HAL_Delay(10);
-#elif (ACTIVE_TEST_MODE == TEST_MODE_BOTH_MOTORS)
-    Dump_Start();
-    HAL_Delay(100);
-#elif (ACTIVE_TEST_MODE == TEST_MODE_EMM_DUAL)
-    EMM_Vel_control(EMM_TEST_MOTOR_ID_A, EMM_TEST_DIR_A, EMM_TEST_SPEED_RPM_A, EMM_TEST_ACCEL, false);
-    HAL_Delay(EMM_TEST_CMD_GAP_MS);
-    EMM_Vel_control(EMM_TEST_MOTOR_ID_B, EMM_TEST_DIR_B, EMM_TEST_SPEED_RPM_B, EMM_TEST_ACCEL, false);
-    HAL_Delay(100);
-#elif (ACTIVE_TEST_MODE == TEST_MODE_ALL_MOTORS)
-    DC_Motor_SetDirection(0);
-
-    Emm_V5_Reset_Clog_Pro(EMM_TEST_MOTOR_ID_A);
-    HAL_Delay(EMM_TEST_CMD_GAP_MS);
-    Emm_V5_Modify_Ctrl_Mode(EMM_TEST_MOTOR_ID_A, false, 2);
-    HAL_Delay(EMM_TEST_CMD_GAP_MS);
-    Emm_V5_En_Control(EMM_TEST_MOTOR_ID_A, true, false);
-    HAL_Delay(EMM_TEST_CMD_GAP_MS);
-    Emm_V5_Reset_Clog_Pro(EMM_TEST_MOTOR_ID_B);
-    HAL_Delay(EMM_TEST_CMD_GAP_MS);
-    Emm_V5_Modify_Ctrl_Mode(EMM_TEST_MOTOR_ID_B, false, 2);
-    HAL_Delay(EMM_TEST_CMD_GAP_MS);
-    Emm_V5_En_Control(EMM_TEST_MOTOR_ID_B, true, false);
-    HAL_Delay(EMM_TEST_CMD_GAP_MS);
-
-    for (g_dc_test_speed_rpm = 0; g_dc_test_speed_rpm <= DC_TEST_TARGET_RPM; g_dc_test_speed_rpm += DC_TEST_ACCEL_STEP_RPM)
+    else if (APP_MODE_SELECT == APP_MODE_DC_MOTOR_IR_TEST)
     {
-      DC_Motor_SetSpeed(g_dc_test_speed_rpm);
-      HAL_Delay(EMM_TEST_CMD_GAP_MS);
-      EMM_Vel_control(EMM_TEST_MOTOR_ID_A, EMM_TEST_DIR_A, EMM_TEST_SPEED_RPM_A, EMM_TEST_ACCEL, false);
-      HAL_Delay(EMM_TEST_CMD_GAP_MS);
-      EMM_Vel_control(EMM_TEST_MOTOR_ID_B, EMM_TEST_DIR_A, EMM_TEST_SPEED_RPM_B, EMM_TEST_ACCEL, false);
-      HAL_Delay(DC_TEST_STEP_DELAY_MS);
+      DcMotorIrTest_Process();
     }
-
-    DC_Motor_SetSpeed(DC_TEST_TARGET_RPM);
-    for (uint32_t i = 0; i < (DC_TEST_RUN_TIME_MS / 10U); i++)
+    else
     {
-      if ((i % 10U) == 0U)
+      static uint32_t last_rm3508_service_tick = 0U;
+
+      Screen_ProcessRx();
+      App_ProcessEvents(&g_ctx);
+      App_ApplyOutputs(&g_ctx);
+      if ((HAL_GetTick() - last_rm3508_service_tick) >= 10U)
       {
-        EMM_Vel_control(EMM_TEST_MOTOR_ID_A, EMM_TEST_DIR_A, EMM_TEST_SPEED_RPM_A, EMM_TEST_ACCEL, false);
-        HAL_Delay(EMM_TEST_CMD_GAP_MS);
-        EMM_Vel_control(EMM_TEST_MOTOR_ID_B, EMM_TEST_DIR_A, EMM_TEST_SPEED_RPM_B, EMM_TEST_ACCEL, false);
+        last_rm3508_service_tick = HAL_GetTick();
+        RM3508_Service();
       }
-      HAL_Delay(10);
+      App_UpdateRuntime(&g_ctx);
+      Screen_Service(&g_ctx);
+      Screen_RefreshDirty(&g_ctx);
     }
-
-    for (g_dc_test_speed_rpm = DC_TEST_TARGET_RPM; g_dc_test_speed_rpm >= 0; g_dc_test_speed_rpm -= DC_TEST_ACCEL_STEP_RPM)
-    {
-      DC_Motor_SetSpeed(g_dc_test_speed_rpm);
-      HAL_Delay(EMM_TEST_CMD_GAP_MS);
-      EMM_Vel_control(EMM_TEST_MOTOR_ID_A, EMM_TEST_DIR_A, EMM_TEST_SPEED_RPM_A, EMM_TEST_ACCEL, false);
-      HAL_Delay(EMM_TEST_CMD_GAP_MS);
-      EMM_Vel_control(EMM_TEST_MOTOR_ID_B, EMM_TEST_DIR_A, EMM_TEST_SPEED_RPM_B, EMM_TEST_ACCEL, false);
-      HAL_Delay(DC_TEST_STEP_DELAY_MS);
-    }
-
-    DC_Motor_SetDirection(2);
-    DC_Motor_SetSpeed(0);
-    Emm_V5_Stop_Now(EMM_TEST_MOTOR_ID_A, false);
-    HAL_Delay(EMM_TEST_CMD_GAP_MS);
-    Emm_V5_Stop_Now(EMM_TEST_MOTOR_ID_B, false);
-    HAL_Delay(DC_TEST_STOP_TIME_MS);
-#elif (ACTIVE_TEST_MODE == TEST_MODE_SCREEN)
-    /* Screen test mode: hardware is driven by UI events below */
-#endif
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-#if (ACTIVE_TEST_MODE == TEST_MODE_SCREEN)
-    Screen_ProcessRx();
-    App_ProcessEvents(&g_ctx);
-    App_ApplyOutputs(&g_ctx);
-    App_UpdateRuntime(&g_ctx);
-    Screen_RefreshDirty(&g_ctx);
-#endif
   }
   /* USER CODE END 3 */
 }

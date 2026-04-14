@@ -7,6 +7,9 @@
 
 /* 电机反馈数据 */
 static Motor_Measure_t motor_data[MOTOR_NUM];
+static uint32_t last_feedback_tick[MOTOR_NUM] = {0};
+
+#define RM3508_FEEDBACK_TIMEOUT_MS  100U
 
 /* 调试观察变量：用于在线调试看 CAN 收发状态 */
 volatile uint32_t g_rm3508_last_can_id = 0;
@@ -76,13 +79,14 @@ void RM3508_Init(void)
     }
 
     g_rm3508_init_stage = 5;
-    /* 初始化所有电机的PID: Kp=10, Ki=0.02, Kd=0 */
+    /* 初始化所有电机的PID: 先用更保守的参数，减少实机脉冲式输出 */
     for (uint8_t i = 0; i < MOTOR_NUM; i++) {
-        PID_Init(&motor_pid[i], 10.0f, 0.02f, 0.0f, 16384.0f, 5000.0f, 10.0f);
+        PID_Init(&motor_pid[i], 4.0f, 0.0f, 0.0f, 16384.0f, 5000.0f, 10.0f);
     }
 
     /* 清零反馈数据和控制状态 */
     memset(motor_data, 0, sizeof(motor_data));
+    memset(last_feedback_tick, 0, sizeof(last_feedback_tick));
     memset(target_speed, 0, sizeof(target_speed));
     memset(motor_enabled, 0, sizeof(motor_enabled));
     g_rm3508_last_can_id = 0;
@@ -255,15 +259,27 @@ void RM3508_StopAll(void)
 void RM3508_Control_Loop(void)
 {
     int16_t output[MOTOR_NUM] = {0};
+    uint32_t now = HAL_GetTick();
 
     for (uint8_t i = 0; i < MOTOR_NUM; i++) {
         if (motor_enabled[i]) {
+            if ((now - last_feedback_tick[i]) > RM3508_FEEDBACK_TIMEOUT_MS) {
+                motor_pid[i].iout = 0.0f;
+                motor_pid[i].output = 0.0f;
+                output[i] = 0;
+                continue;
+            }
             PID_Calc(&motor_pid[i], (float)target_speed[i], (float)motor_data[i].speed_rpm);
             output[i] = (int16_t)motor_pid[i].output;
         }
     }
 
     RM3508_SendCurrents(output[0], output[1], output[2], output[3]);
+}
+
+void RM3508_Service(void)
+{
+    RM3508_Control_Loop();
 }
 
 /*-----------------------------------------------------------
@@ -306,5 +322,6 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
         motor_data[idx].speed_rpm     = (int16_t)(rx_data[2] << 8 | rx_data[3]);
         motor_data[idx].given_current = (int16_t)(rx_data[4] << 8 | rx_data[5]);
         motor_data[idx].temperature   = rx_data[6];
+        last_feedback_tick[idx]       = HAL_GetTick();
     }
 }

@@ -27,6 +27,8 @@
 /* USER CODE BEGIN Includes */
 #include "Screen.h"
 #include "machine_workflow.h"
+#include "emm_id1_test.h"
+#include "dc_motor_ir_test.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -279,11 +281,30 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
     }
 }
 
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+    if (huart->Instance == USART2)
+    {
+        Screen_UART_ErrorCallback();
+    }
+}
+
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
     if (GPIO_Pin == IR_Pin)
     {
-        IR_Counter_Callback(&g_ctx);
+        if (EmmId1Test_IsActive())
+        {
+            EmmId1Test_IrCallback();
+        }
+        else if (DcMotorIrTest_IsActive())
+        {
+            DcMotorIrTest_IrCallback();
+        }
+        else
+        {
+            IR_Counter_Callback(&g_ctx);
+        }
     }
 }
 

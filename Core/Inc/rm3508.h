@@ -76,6 +76,7 @@ void RM3508_StopAll(void);
 
 /* 在主循环中调用，执行PID计算并发送指令 */
 void RM3508_Control_Loop(void);
+void RM3508_Service(void);
 
 /* 获取电机反馈数据 */
 Motor_Measure_t* RM3508_GetMotorData(uint8_t motor_id);

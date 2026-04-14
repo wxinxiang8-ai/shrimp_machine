@@ -462,6 +462,21 @@
               <FileType>1</FileType>
               <FilePath>../Core/Src/machine_workflow.c</FilePath>
             </File>
+            <File>
+              <FileName>emm_id1_test.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Core/Src/emm_id1_test.c</FilePath>
+            </File>
+            <File>
+              <FileName>rm3508_test.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Core/Src/rm3508_test.c</FilePath>
+            </File>
+            <File>
+              <FileName>dc_motor_ir_test.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Core/Src/dc_motor_ir_test.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

@@ -107,9 +107,11 @@ void     Screen_Init(void);
 void     Screen_ProcessRx(void);
 void     Screen_RefreshDirty(MachineContext_t *ctx);
 void     Screen_DrawFullUI(MachineContext_t *ctx);
+void     Screen_Service(MachineContext_t *ctx);
 
 void     Screen_SendCmd(const char *cmd);
 void     Screen_UART_RxCallback(uint16_t size);
+void     Screen_UART_ErrorCallback(void);
 
 /* ---------- App Public API ---------- */
 

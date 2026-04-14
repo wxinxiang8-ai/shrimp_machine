@@ -71,9 +71,9 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : IR_Pin (EXTI falling edge for peel counting) */
+  /*Configure GPIO pin : IR_Pin (EXTI both edges for trigger+release detection) */
   GPIO_InitStruct.Pin = IR_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(IR_GPIO_Port, &GPIO_InitStruct);
 
